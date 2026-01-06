@@ -62,8 +62,12 @@ load_css()
 # ===================================================================
 # SESSION STATE INITIALIZATION
 # ===================================================================
+if 'page' not in st.session_state:
+    st.session_state.page = 'dashboard'
+
+# Backward-compat (some parts of the app still reference `current_page`)
 if 'current_page' not in st.session_state:
-    st.session_state.current_page = 'dashboard'
+    st.session_state.current_page = st.session_state.page
 
 if 'simulation_results' not in st.session_state:
     st.session_state.simulation_results = None
@@ -74,6 +78,10 @@ if 'benchmark_data' not in st.session_state:
 # ===================================================================
 # CUSTOM NAVIGATION
 # ===================================================================
+def _set_page(page: str):
+    st.session_state.page = page
+    st.session_state.current_page = page
+
 def render_navbar():
     """Render floating navbar dengan HTML/CSS."""
     nav_html = f"""
@@ -82,21 +90,84 @@ def render_navbar():
             <span style="font-size: 1.5rem;">🚀</span>
             <span style="font-family: 'Orbitron', monospace; font-weight: 700; color: #00d4ff; font-size: 0.9rem;">QOS</span>
         </div>
-        <button class="nav-item {'active' if st.session_state.current_page == 'dashboard' else ''}" 
-                onclick="window.location.href='?page=dashboard'">
+        <button class="nav-item {'active' if st.session_state.page == 'dashboard' else ''}">
             📊 Dashboard
         </button>
-        <button class="nav-item {'active' if st.session_state.current_page == 'analysis' else ''}"
-                onclick="window.location.href='?page=analysis'">
+        <button class="nav-item {'active' if st.session_state.page == 'analysis' else ''}">
             📈 Analisis Historis
         </button>
-        <button class="nav-item {'active' if st.session_state.current_page == 'about' else ''}"
-                onclick="window.location.href='?page=about'">
+        <button class="nav-item {'active' if st.session_state.page == 'about' else ''}">
             ℹ️ Tentang
         </button>
     </div>
     """
     st.markdown(nav_html, unsafe_allow_html=True)
+
+    # Click bridge (SPA): invisible Streamlit buttons positioned on top of the HTML navbar.
+    # Important: we must not change CSS files/templates, so we inject minimal CSS here.
+    st.markdown(
+        """
+        <style>
+        /* Ensure overlay does not occupy layout space and never shows visible buttons */
+        .nav-overlay-root {
+            position: fixed;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10000;
+            width: fit-content;
+            height: 0;
+            pointer-events: none;
+        }
+
+        .nav-overlay-root * {
+            pointer-events: auto;
+        }
+
+        /* Force the Streamlit button visuals to be fully transparent in the overlay */
+        .nav-overlay-root .stButton > button,
+        .nav-overlay-root [data-testid="stButton"] > button {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: transparent !important;
+            padding: 0.5rem 1.5rem !important;
+            border-radius: 25px !important;
+            min-height: 2.3rem !important;
+            height: 2.3rem !important;
+        }
+
+        .nav-overlay-root .stButton > button:hover,
+        .nav-overlay-root [data-testid="stButton"] > button:hover {
+            background: transparent !important;
+        }
+
+        /* Remove any margins/gaps so overlay doesn't push content */
+        .nav-overlay-root [data-testid="stHorizontalBlock"] {
+            gap: 0 !important;
+        }
+        .nav-overlay-root [data-testid="column"] {
+            padding: 0 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Render overlay in a zero-height container, fixed-positioned.
+    overlay = st.container()
+    with overlay:
+        st.markdown('<div class="nav-overlay-root">', unsafe_allow_html=True)
+        cols = st.columns([2.2, 1, 1.2, 0.8], gap="small")
+        with cols[0]:
+            st.markdown("", unsafe_allow_html=True)
+        with cols[1]:
+            st.button("\u200b", key="nav_spa_dashboard", on_click=_set_page, args=("dashboard",))
+        with cols[2]:
+            st.button("\u200b", key="nav_spa_analysis", on_click=_set_page, args=("analysis",))
+        with cols[3]:
+            st.button("\u200b", key="nav_spa_about", on_click=_set_page, args=("about",))
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # Spacer untuk navbar
 st.markdown("<div style='height: 80px;'></div>", unsafe_allow_html=True)
@@ -649,7 +720,12 @@ def main():
     # Check URL params untuk navigasi
     query_params = st.query_params
     if 'page' in query_params:
-        st.session_state.current_page = query_params['page']
+        page_param = query_params.get('page')
+        if isinstance(page_param, list):
+            page_param = page_param[0] if page_param else None
+        _set_page(page_param)
+
+    render_navbar()
     
     # Sidebar untuk mobile navigation
     with st.sidebar:
@@ -664,23 +740,23 @@ def main():
         st.markdown("---")
         
         if st.button("📊 Dashboard", use_container_width=True):
-            st.session_state.current_page = 'dashboard'
+            _set_page('dashboard')
             st.rerun()
         
         if st.button("📈 Analisis Historis", use_container_width=True):
-            st.session_state.current_page = 'analysis'
+            _set_page('analysis')
             st.rerun()
         
         if st.button("ℹ️ Tentang", use_container_width=True):
-            st.session_state.current_page = 'about'
+            _set_page('about')
             st.rerun()
     
     # Render halaman berdasarkan state
-    if st.session_state.current_page == 'dashboard':
+    if st.session_state.page == 'dashboard':
         render_dashboard()
-    elif st.session_state.current_page == 'analysis':
+    elif st.session_state.page == 'analysis':
         render_analysis()
-    elif st.session_state.current_page == 'about':
+    elif st.session_state.page == 'about':
         render_about()
     else:
         render_dashboard()
